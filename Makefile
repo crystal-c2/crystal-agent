@@ -12,10 +12,12 @@ bin:
 x86: bin
 	$(CC) -DWIN_X86 $(CFLAGS) -c src/loader.c -o bin/loader.x86.o
 	$(CC) -DWIN_X86 $(CFLAGS) -c src/agent.c  -o bin/agent.x86.o
+	$(CC) -DWIN_X86 $(CFLAGS) -c src/socks.c  -o bin/socks.x86.o
 
 x64: bin
 	$(CC_64) -DWIN_X64 $(CFLAGS) -c src/loader.c -o bin/loader.x64.o
 	$(CC_64) -DWIN_X64 $(CFLAGS) -c src/agent.c  -o bin/agent.x64.o
+	$(CC_64) -DWIN_X64 $(CFLAGS) -c src/socks.c  -o bin/socks.x64.o
 
 clean:
 	rm -rf bin

